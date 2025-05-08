@@ -12,6 +12,7 @@ CREATE TABLE content (
   summary TEXT,
   image_url TEXT,
   published_at TIMESTAMP,
+  domain TEXT NOT NULL DEFAULT 'finance',  -- ✅ 추가된 필드
   created_at TIMESTAMP DEFAULT now()
 );
 
