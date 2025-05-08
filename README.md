@@ -1,88 +1,65 @@
-# moard-api
+# Moard API
 
-## Supabase SQL
+FastAPI를 사용한 백엔드 API 서버입니다.
+
+## 기술 스택
+
+- FastAPI
+- Supabase
+- Python 3.8+
+
+## 시작하기
+
+### 1. 가상환경 설정
+
+```bash
+# 가상환경 생성
+python -m venv .venv
+
+# 가상환경 활성화
+# Windows
+.venv\Scripts\activate
+# Linux/Mac
+source .venv/bin/activate
 ```
--- 1. 공통 콘텐츠 메타 테이블
-CREATE TABLE content (
-  id UUID PRIMARY KEY,
-  type TEXT NOT NULL CHECK (type IN ('youtube', 'news', 'blog')),
-  title TEXT NOT NULL,
-  url TEXT NOT NULL,
-  keyword TEXT NOT NULL,
-  summary TEXT,
-  image_url TEXT,
-  published_at TIMESTAMP,
-  domain TEXT NOT NULL DEFAULT 'finance',  -- ✅ 추가된 필드
-  created_at TIMESTAMP DEFAULT now()
-);
 
--- 2. 유튜브 전용 테이블
-CREATE TABLE youtube_content (
-  content_id UUID PRIMARY KEY REFERENCES content(id),
-  channel_title TEXT,
-  view_count INTEGER,
-  like_count INTEGER,
-  comment_count INTEGER,
-  duration_sec INTEGER
-);
+### 2. 의존성 설치
 
--- 3. 뉴스 전용 테이블
-CREATE TABLE news_content (
-  content_id UUID PRIMARY KEY REFERENCES content(id),
-  press_name TEXT,
-  is_opinion BOOLEAN DEFAULT false
-);
+```bash
+pip install -r requirements.txt
+```
 
--- 4. 블로그 전용 테이블
-CREATE TABLE blog_content (
-  content_id UUID PRIMARY KEY REFERENCES content(id),
-  author TEXT,
-  sentiment_score FLOAT,
-  word_count INTEGER
-);
+### 3. 환경 변수 설정
 
--- 5. 사용자 로그 테이블
-CREATE TABLE logs (
-  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  client_id TEXT NOT NULL,
-  content_id UUID REFERENCES content(id),
-  event_type TEXT NOT NULL CHECK (event_type IN ('click', 'view', 'impression')),
-  timestamp TIMESTAMP DEFAULT now(),
-  duration_sec INTEGER,
-  position INTEGER
-);
+`.env` 파일을 프로젝트 루트 디렉토리에 생성하고 다음 변수들을 설정합니다:
 
--- 6. 추천 결과 기록 테이블
-CREATE TABLE recommend_history (
-  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  client_id TEXT NOT NULL,
-  content_id UUID REFERENCES content(id),
-  algorithm TEXT NOT NULL,
-  timestamp TIMESTAMP DEFAULT now()
-);
+```env
+SUPABASE_URL=your_supabase_url
+SUPABASE_KEY=your_supabase_key
+```
 
--- 7. 사용자 프로필 테이블 (pgvector 확장 필요)
-CREATE EXTENSION IF NOT EXISTS vector;
+### 4. 서버 실행
 
-CREATE TABLE user_profile (
-  client_id TEXT PRIMARY KEY,
-  last_clicked_ids UUID[],
-  preferred_type TEXT,
-  keyword_history TEXT[],
-  embedding vector(768)
-);
+```bash
+uvicorn main:app --reload
+```
 
--- 8. 키워드 태그 테이블
-CREATE TABLE keyword_tags (
-  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  content_id UUID REFERENCES content(id),
-  tag TEXT
-);
+서버가 실행되면 다음 URL에서 API 문서를 확인할 수 있습니다:
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
 
--- 9. 인덱스 추가
-CREATE INDEX idx_content_keyword ON content(keyword);
-CREATE INDEX idx_logs_client_id ON logs(client_id);
-CREATE INDEX idx_logs_content_id ON logs(content_id);
-CREATE INDEX idx_recommend_history_client_id ON recommend_history(client_id);
+## 프로젝트 구조
 
 ```
+moard-api/
+├── api/            # API 라우터
+├── models/         # 데이터 모델
+├── services/       # 비즈니스 로직
+├── main.py         # 애플리케이션 진입점
+├── requirements.txt # 의존성 목록
+└── .env           # 환경 변수 (git에 포함되지 않음)
+```
+
+## API 엔드포인트
+
+- `/api/v1/...` - API 엔드포인트들
