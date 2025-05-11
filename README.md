@@ -36,6 +36,9 @@ pip install -r requirements.txt
 ```env
 SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_supabase_key
+YOUTUBE_API_KEY=your_youtube_api_key
+NAVER_CLIENT_ID=your_naver_api_key
+NAVER_CLIENT_SECRET=your_naver_api_key
 ```
 
 ### 4. 서버 실행
