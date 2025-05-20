@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.content_router import router as content_router
 from api.content import router as content_save_router
+from api.analytics import router as analytics_router
 from services.content_service_factory import ContentServiceFactory
 import os
 from dotenv import load_dotenv
@@ -43,6 +44,7 @@ print("==========================")
 # 라우터 등록
 app.include_router(content_router)  # 검색 라우터
 app.include_router(content_save_router, prefix="/api")  # 저장 라우터
+app.include_router(analytics_router)  # 분석 라우터
 
 @app.get("/")
 async def root():
