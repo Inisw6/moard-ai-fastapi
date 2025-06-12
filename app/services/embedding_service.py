@@ -1,4 +1,5 @@
 import logging
+from typing import List, Dict
 from app.ml.doc2vec_embedder import Doc2VecContentEmbedder
 
 
@@ -32,6 +33,26 @@ class EmbeddingService:
         if self._embedder is None:
             raise RuntimeError("Doc2Vec 임베더가 성공적으로 로드되지 않았습니다.")
         return self._embedder
+
+    def embed_bulk(self, contents: List[Dict]) -> List[List[float]]:
+        """여러 콘텐츠를 한번에 임베딩합니다.
+
+        Args:
+            contents (ListDict]): 임베딩할 콘텐츠 딕셔너리 리스트.
+
+        Returns:
+            List[List[float]]: 생성된 임베딩 벡터들의 리스트.
+
+        Raises:
+            RuntimeError: 임베더가 로드되지 않았거나 추론 중 오류가 발생한 경우.
+        """
+        embedder = self.get_embedder()
+        try:
+            embeddings_array = embedder.embed_contents(contents)
+            return embeddings_array.tolist()
+        except Exception as e:
+            logging.error(f"벌크 임베딩 중 오류 발생: {e}")
+            raise RuntimeError("벌크 임베딩 과정에서 오류가 발생했습니다.")
 
 
 def get_embedding_service() -> EmbeddingService:

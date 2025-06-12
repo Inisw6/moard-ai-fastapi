@@ -1,10 +1,11 @@
 import logging
 import re
-from typing import Optional
+from typing import Optional, List, Dict
 
 import numpy as np
 import pandas as pd
 from gensim.models.doc2vec import Doc2Vec
+from joblib import Parallel, delayed
 
 from app.core.config import DOC2VEC_MODEL_PATH
 from app.services.content_service import get_contents
@@ -97,4 +98,25 @@ class Doc2VecContentEmbedder:
             return np.array(inferred_vec, dtype=np.float32)
         except Exception as e:
             logging.warning("Doc2Vec 추론 실패: %s. 제로 벡터를 반환합니다.", e)
-            return np.zeros(self.pretrained_dim, dtype=np.float32) 
+            return np.zeros(self.pretrained_dim, dtype=np.float32)
+
+    def embed_contents(self, contents: List[Dict]) -> np.ndarray:
+        """주어진 여러 콘텐츠를 병렬로 임베딩합니다.
+
+        Args:
+            contents (List[Dict]): 각각 'title'과 'description' 키를 포함하는
+                콘텐츠 딕셔너리의 리스트.
+
+        Returns:
+            np.ndarray: `(num_contents, content_dim)` 크기의 임베딩 벡터 배열.
+        """
+        if not contents:
+            return np.array([], dtype=np.float32).reshape(0, self.content_dim)
+
+        # joblib을 사용하여 embed_content 함수를 병렬로 실행합니다.
+        # n_jobs=-1은 사용 가능한 모든 CPU 코어를 사용하라는 의미입니다.
+        embeddings = Parallel(n_jobs=-1)(
+            delayed(self.embed_content)(content) for content in contents
+        )
+
+        return np.array(embeddings, dtype=np.float32) 
