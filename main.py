@@ -2,6 +2,7 @@
 from fastapi import FastAPI
 from app.api.router import api_router
 from app.services.model_service import get_model_service
+from app.ml.load import load_all_ml_models
 
 app = FastAPI(
     title="Q-Network Inference API",
@@ -11,8 +12,9 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def startup_event():
-    """FastAPI 애플리케이션 시작 시 모델 서비스를 초기화합니다."""
+    """FastAPI 애플리케이션 시작 시 서비스를 초기화하고 ML 모델을 로드합니다."""
     get_model_service()
+    load_all_ml_models()
 
 app.include_router(api_router, prefix="/api/v1")
 

@@ -10,4 +10,7 @@ HIDDEN_DIM = 128
 # 어느 위치에서 실행해도 일관된 경로를 유지합니다.
 MODEL_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "models", "dqn_model_seed0_final.pth")
+)
+DOC2VEC_MODEL_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "models", "doc2vec.model")
 ) 
