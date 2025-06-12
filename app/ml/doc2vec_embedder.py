@@ -7,13 +7,10 @@ import pandas as pd
 from gensim.models.doc2vec import Doc2Vec
 
 from app.core.config import DOC2VEC_MODEL_PATH
-from app.ml.base_embedder import BaseContentEmbedder
-from app.ml.registry import register
 from app.services.content_service import get_contents
 
 
-@register("doc2vec_content")
-class Doc2VecContentEmbedder(BaseContentEmbedder):
+class Doc2VecContentEmbedder:
     """Doc2Vec 모델을 사용하여 텍스트 기반 콘텐츠를 임베딩합니다.
 
     이 클래스는 사전 학습된 Doc2Vec 모델을 로드하여 콘텐츠의 제목과 설명을
