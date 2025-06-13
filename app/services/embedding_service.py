@@ -61,4 +61,4 @@ def get_embedding_service() -> EmbeddingService:
     Returns:
         EmbeddingService: 임베딩 서비스의 싱글턴 인스턴스.
     """
-    return EmbeddingService() 
+    return EmbeddingService()

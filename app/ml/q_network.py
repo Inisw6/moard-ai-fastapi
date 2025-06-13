@@ -59,4 +59,4 @@ class QNetwork(nn.Module):
                 f"content_dim={content.shape[1]}, expected={self.content_dim}"
             )
         x = torch.cat([user, content], dim=1)
-        return self.net(x)  # [batch, 1] 
+        return self.net(x)  # [batch, 1]

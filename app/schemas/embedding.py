@@ -9,6 +9,7 @@ class EmbeddingContent(BaseModel):
         title (str): 임베딩할 콘텐츠의 제목.
         description (Optional[str]): 임베딩할 콘텐츠의 설명. 기본값은 빈 문자열.
     """
+
     title: str
     description: Optional[str] = ""
 
@@ -41,6 +42,7 @@ class EmbeddingBulkRequest(BaseModel):
     Attributes:
         contents (List[EmbeddingContent]): 임베딩할 콘텐츠 객체의 리스트.
     """
+
     contents: List[EmbeddingContent]
 
 
@@ -50,4 +52,5 @@ class EmbeddingBulkResponse(BaseModel):
     Attributes:
         embeddings (List[List[float]]): 생성된 임베딩 벡터의 리스트.
     """
-    embeddings: List[List[float]] 
+
+    embeddings: List[List[float]]
