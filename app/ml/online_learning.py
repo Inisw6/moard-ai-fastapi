@@ -3,7 +3,7 @@
 이 모듈은 Q-Network의 온라인 학습을 위한 클래스와 함수들을 제공합니다.
 """
 
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple
 import torch
 from torch import Tensor
 from app.ml.q_network import QNetwork
@@ -39,7 +39,7 @@ class OnlineLearner:
             model_path: 사전 학습된 모델 경로 (있는 경우)
         """
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
+
         # 네트워크 초기화
         self.policy_net = QNetwork(user_dim, content_dim, hidden_dim).to(self.device)
         self.target_net = QNetwork(user_dim, content_dim, hidden_dim).to(self.device)
@@ -94,7 +94,7 @@ class OnlineLearner:
 
         # Q-value 예측
         q_value = self.policy_net(user_embedding, content_embedding)
-        
+
         # TODO: 실제 학습 로직 구현
         # 현재는 예시로 0을 반환
         loss = torch.tensor(0.0, device=self.device)
@@ -134,5 +134,5 @@ class OnlineLearner:
 
         torch.save(checkpoint, save_path)
         print(f"Model saved to {save_path}")
-        
-        return save_path 
+
+        return save_path

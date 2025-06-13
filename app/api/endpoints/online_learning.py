@@ -1,8 +1,3 @@
-"""온라인 학습을 위한 API 엔드포인트.
-
-이 모듈은 Q-Network의 온라인 학습을 위한 REST API 엔드포인트를 제공합니다.
-"""
-
 from typing import Dict, Optional, List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -14,9 +9,7 @@ from app.core.config import settings
 router = APIRouter()
 
 # 전역 OnlineLearner 인스턴스
-learner = OnlineLearner(
-    model_path=settings.PRETRAINED_MODEL_PATH
-)
+learner = OnlineLearner(model_path=settings.PRETRAINED_MODEL_PATH)
 
 
 class InteractionData(BaseModel):
@@ -29,6 +22,7 @@ class InteractionData(BaseModel):
         reward: 보상값
         done: 에피소드 종료 여부
     """
+
     user_id: str
     item_id: str
     action: str
@@ -43,6 +37,7 @@ class InteractionResponse(BaseModel):
         q_value: 예측된 Q-value
         loss: 학습 손실값
     """
+
     q_value: float
     loss: float
 
@@ -53,6 +48,7 @@ class BatchInteractionData(BaseModel):
     Attributes:
         interactions: 상호작용 데이터 리스트
     """
+
     interactions: List[InteractionData]
 
 
@@ -63,6 +59,7 @@ class BatchInteractionResponse(BaseModel):
         results: 각 상호작용의 처리 결과 리스트
         total_loss: 전체 배치의 평균 손실값
     """
+
     results: List[InteractionResponse]
     total_loss: float
 
@@ -192,4 +189,4 @@ async def save_model(
         raise HTTPException(
             status_code=500,
             detail=f"Error saving model: {str(e)}",
-        ) 
+        )

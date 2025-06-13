@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     Attributes:
         PRETRAINED_MODEL_PATH: 사전 학습된 모델 파일 경로
     """
+
     PRETRAINED_MODEL_PATH: str = "models/dqn_model_seed0_final.pth"
 
 
