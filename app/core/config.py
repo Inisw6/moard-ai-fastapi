@@ -27,9 +27,19 @@ class Settings(BaseSettings):
 
     Attributes:
         PRETRAINED_MODEL_PATH: 사전 학습된 모델 파일 경로
+        REDIS_HOST: Redis 서버 호스트
+        REDIS_PORT: Redis 서버 포트
+        REDIS_DB: Redis 데이터베이스 번호
+        REDIS_PASSWORD: Redis 비밀번호
     """
 
     PRETRAINED_MODEL_PATH: str = "models/dqn_model_seed0_final.pth"
+
+    # Redis 설정
+    REDIS_HOST: str = "localhost"  # Docker 환경에서는 "redis"로 변경
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    REDIS_PASSWORD: str = ""
 
 
 settings = Settings()
