@@ -5,7 +5,7 @@ from app.services.model_service import ModelService, get_model_service
 router = APIRouter()
 
 
-@router.post("/", response_model=InferenceResponse)
+@router.post("/bulk", response_model=InferenceResponse)
 async def predict(
     request: InferenceRequest,
     model_service: ModelService = Depends(get_model_service),
