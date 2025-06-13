@@ -4,6 +4,7 @@ from app.services.model_service import ModelService, get_model_service
 
 router = APIRouter()
 
+
 @router.post("/", response_model=InferenceResponse)
 async def predict(
     request: InferenceRequest,
@@ -33,4 +34,6 @@ async def predict(
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}") 
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )

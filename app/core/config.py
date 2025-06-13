@@ -16,3 +16,19 @@ MODEL_PATH = os.path.abspath(
 DOC2VEC_MODEL_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "models", "doc2vec.model")
 )
+
+"""애플리케이션 설정을 관리하는 모듈."""
+
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    """애플리케이션 설정.
+
+    Attributes:
+        PRETRAINED_MODEL_PATH: 사전 학습된 모델 파일 경로
+    """
+    PRETRAINED_MODEL_PATH: str = "models/dqn_model_seed0_final.pth"
+
+
+settings = Settings()
