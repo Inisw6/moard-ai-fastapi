@@ -6,7 +6,7 @@
 from typing import Optional, Tuple
 import torch
 from torch import Tensor
-from app.ml.q_network import QNetwork
+from app.ml.q_network import DuelingQNetwork
 import os
 from datetime import datetime
 
@@ -25,8 +25,8 @@ class OnlineLearner:
 
     def __init__(
         self,
-        user_dim: int = 20,
-        content_dim: int = 15,
+        user_dim: int = 300,
+        content_dim: int = 300,
         hidden_dim: int = 128,
         model_path: Optional[str] = None,
     ) -> None:
@@ -41,8 +41,8 @@ class OnlineLearner:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # 네트워크 초기화
-        self.policy_net = QNetwork(user_dim, content_dim, hidden_dim).to(self.device)
-        self.target_net = QNetwork(user_dim, content_dim, hidden_dim).to(self.device)
+        self.policy_net = DuelingQNetwork(user_dim, content_dim, hidden_dim).to(self.device)
+        self.target_net = DuelingQNetwork(user_dim, content_dim, hidden_dim).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 

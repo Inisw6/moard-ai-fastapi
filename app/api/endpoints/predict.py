@@ -2,13 +2,13 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from app.schemas.predict import InferenceRequest, InferenceResponse
 from app.services.model_service import ModelService, get_model_service
-from app.schemas.content import ContentResponse
 from app.models.orm import User, Content
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from pydantic import BaseModel
 from uuid import UUID
 import numpy as np
+import json
 
 router = APIRouter()
 
@@ -46,6 +46,7 @@ async def predict(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}"
         )
 
+
 class TopContentsRequest(BaseModel):
     user_id: UUID
     content_ids: List[int]
@@ -53,14 +54,16 @@ class TopContentsRequest(BaseModel):
     def get_uuid_bytes(self) -> bytes:
         return self.user_id.bytes
 
+
 class TopContentsResponse(BaseModel):
     content_ids: List[int]
+
 
 @router.post("/top-contents", response_model=TopContentsResponse)
 async def get_top_contents(
     request: TopContentsRequest,
     model_service: ModelService = Depends(get_model_service),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """사용자 ID와 콘텐츠 ID 리스트를 받아 상위 6개의 콘텐츠 ID를 반환합니다.
 
@@ -86,17 +89,27 @@ async def get_top_contents(
         if not contents:
             raise HTTPException(status_code=404, detail="No contents found")
 
-        # TODO: 실제 콘텐츠 임베딩 추출 로직
-        # content_embeddings = [content.embedding for content in contents]
-        
-        # 임시: 5차원 콘텐츠 임베딩 생성 (각 콘텐츠마다 랜덤 벡터)
-        content_embeddings = [np.random.rand(5).tolist() for _ in range(len(contents))]
+        # 콘텐츠 임베딩 추출 및 변환
+        content_embeddings = []
+        for content in contents:
+            try:
+                # JSON 문자열을 파싱하여 float 리스트로 변환
+                embedding = json.loads(content.embedding)
+                if not isinstance(embedding, list) or not all(
+                    isinstance(x, (int, float)) for x in embedding
+                ):
+                    raise ValueError("Invalid embedding format")
+                content_embeddings.append(embedding)
+            except (json.JSONDecodeError, ValueError) as e:
+                print(f"Error parsing embedding for content {content.id}: {e}")
+                # 임베딩 파싱 실패 시 임시 벡터 사용
+                content_embeddings.append(np.random.rand(300).tolist())
 
         # TODO: 실제 사용자 임베딩 생성 로직
         # user_embedding = [0.0] * len(content_embeddings[0]) if content_embeddings else []
-        
-        # 임시: 30차원 사용자 임베딩 생성 (랜덤 벡터)
-        user_embedding = np.random.rand(30).tolist()
+
+        # 임시: 300차원 사용자 임베딩 생성 (랜덤 벡터)
+        user_embedding = np.random.rand(300).tolist()
 
         # Q-value 예측
         q_values = model_service.predict(
@@ -107,13 +120,11 @@ async def get_top_contents(
         # Q-value와 콘텐츠를 함께 정렬
         content_q_pairs = list(zip(contents, q_values))
         sorted_pairs = sorted(content_q_pairs, key=lambda x: x[1], reverse=True)
-        
+
         # 상위 6개 선택
         top_pairs = sorted_pairs[:6]
-        
-        return TopContentsResponse(
-            content_ids=[content.id for content, _ in top_pairs]
-        )
+
+        return TopContentsResponse(content_ids=[content.id for content, _ in top_pairs])
 
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))

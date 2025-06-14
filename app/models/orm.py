@@ -54,6 +54,7 @@ class Recommendation(Base):
     __tablename__ = "recommendations"
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     flag = Column(Boolean)
+    embedding = Column(Text)
     model_version = Column(String(255))
     query = Column(String(255))
     recommended_at = Column(DateTime)

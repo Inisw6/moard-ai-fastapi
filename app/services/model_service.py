@@ -1,5 +1,5 @@
 import torch
-from app.ml.q_network import QNetwork
+from app.ml.q_network import DuelingQNetwork
 from app.core import config
 
 
@@ -17,7 +17,7 @@ class ModelService:
 
     def _load_model(self):
         """설정 파일에 지정된 경로에서 모델을 로드하여 인스턴스 변수에 저장합니다."""
-        model = QNetwork(
+        model = DuelingQNetwork(
             user_dim=config.USER_DIM,
             content_dim=config.CONTENT_DIM,
             hidden_dim=config.HIDDEN_DIM,
