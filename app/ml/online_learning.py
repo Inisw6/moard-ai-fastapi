@@ -46,6 +46,9 @@ class OnlineLearner:
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
+        # 옵티마이저 초기화
+        self.optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=0.001)
+
         # 사전 학습된 모델이 있다면 로드
         if model_path and os.path.exists(model_path):
             self._load_pretrained_model(model_path)
@@ -77,10 +80,10 @@ class OnlineLearner:
         """사용자 상호작용을 처리하고 Q-value를 예측합니다.
 
         Args:
-            user_embedding: 사용자 임베딩 텐서
-            content_embedding: 콘텐츠 임베딩 텐서
-            action: 선택된 행동 텐서
-            reward: 보상 텐서
+            user_embedding: 사용자 임베딩 텐서 [batch_size, user_dim]
+            content_embedding: 콘텐츠 임베딩 텐서 [batch_size, content_dim]
+            action: 선택된 행동 텐서 [batch_size, 1]
+            reward: 보상 텐서 [batch_size, 1]
             done: 에피소드 종료 여부
 
         Returns:
@@ -92,14 +95,27 @@ class OnlineLearner:
         action = action.to(self.device)
         reward = reward.to(self.device)
 
-        # Q-value 예측
-        q_value = self.policy_net(user_embedding, content_embedding)
+        # 현재 상태의 Q-value 예측 [batch_size, 1]
+        current_q_value = self.policy_net(user_embedding, content_embedding)
 
-        # TODO: 실제 학습 로직 구현
-        # 현재는 예시로 0을 반환
-        loss = torch.tensor(0.0, device=self.device)
+        # 타겟 Q-value 계산
+        with torch.no_grad():
+            next_q_value = self.target_net(user_embedding, content_embedding)
+            target_q_value = reward + (0.99 * next_q_value * (1 - done))
 
-        return q_value, loss.item()
+        # 손실 계산 및 역전파
+        loss = torch.nn.functional.smooth_l1_loss(current_q_value, target_q_value)
+        
+        # 옵티마이저로 학습
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+        # 타겟 네트워크 업데이트 (매 10번째 스텝마다)
+        if done:
+            self.target_net.load_state_dict(self.policy_net.state_dict())
+
+        return current_q_value, loss.item()
 
     def save_model(
         self,

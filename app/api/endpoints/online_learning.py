@@ -1,5 +1,5 @@
-from typing import Dict, Optional, List
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from typing import Dict, Optional, List, Tuple
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from pydantic import BaseModel
 import torch
 import json
@@ -7,9 +7,14 @@ import redis
 from datetime import datetime
 import asyncio
 import uuid
+from sqlalchemy.orm import Session
+from sqlalchemy import and_
+import os
 
 from app.ml.online_learning import OnlineLearner
 from app.core.config import settings
+from app.core.database import get_db
+from app.models.orm import UserLog, Recommendation, Content, EventType
 
 router = APIRouter()
 
@@ -18,8 +23,25 @@ redis_client = redis.Redis(
     host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=0, decode_responses=True
 )
 
+
+# OnlineLearner 초기화
+def initialize_learner():
+    """OnlineLearner를 초기화합니다.
+
+    Returns:
+        OnlineLearner 인스턴스
+    """
+    # 저장된 모델이 있는지 확인
+    if os.path.exists(settings.PRETRAINED_MODEL_PATH):
+        print(f"Loading existing model from {settings.PRETRAINED_MODEL_PATH}")
+        return OnlineLearner(model_path=settings.PRETRAINED_MODEL_PATH)
+    else:
+        print("No existing model found. Creating new model.")
+        return OnlineLearner(model_path=settings.PRETRAINED_MODEL_PATH)
+
+
 # 전역 OnlineLearner 인스턴스
-learner = OnlineLearner(model_path=settings.PRETRAINED_MODEL_PATH)
+learner = initialize_learner()
 
 
 class InteractionData(BaseModel):
@@ -116,6 +138,32 @@ class AsyncBatchResponse(BaseModel):
     message: str
 
 
+class TrainingDataResponse(BaseModel):
+    """학습 데이터 수집 응답을 위한 Pydantic 모델.
+
+    Attributes:
+        message: 상태 메시지
+        data_count: 수집된 데이터 수
+    """
+
+    message: str
+    data_count: int
+
+
+class TrainingResponse(BaseModel):
+    """학습 처리 응답을 위한 Pydantic 모델.
+
+    Attributes:
+        message: 상태 메시지
+        processed_count: 처리된 데이터 수
+        total_loss: 전체 손실값
+    """
+
+    message: str
+    processed_count: int
+    total_loss: float
+
+
 async def update_task_status(task_id: str, **kwargs):
     """Redis에 작업 상태를 업데이트합니다."""
     current_status = redis_client.get(f"task:{task_id}")
@@ -148,47 +196,78 @@ async def get_task_status(task_id: str) -> Optional[TaskStatus]:
 
 
 async def process_batch_interaction_task(
-    task_id: str, data: BatchInteractionData, save_model: bool = True
+    task_id: str,
+    batch_size: int = 100,
+    save_model: bool = True,
+    db: Session = Depends(get_db),
 ):
     """비동기로 배치 상호작용을 처리하는 작업 함수."""
     try:
-        results = []
-        total_loss = 0.0
-
         # 초기 상태 설정
         await update_task_status(
             task_id,
             status="processing",
             start_time=datetime.now().isoformat(),
-            total_interactions=len(data.interactions),
+            total_interactions=0,
             processed_interactions=0,
         )
 
-        for interaction in data.interactions:
-            # TODO: 실제 임베딩 생성 로직 구현
-            user_embedding = torch.randn(1, 20)
-            content_embedding = torch.randn(1, 15)
-            action = torch.tensor([[1]], dtype=torch.long)
-            reward = torch.tensor([interaction.reward])
+        # 학습 데이터 수집
+        training_data = await collect_training_data(db, batch_size)
 
-            # 상호작용 처리
-            q_value, loss = learner.process_interaction(
-                user_embedding=user_embedding,
-                content_embedding=content_embedding,
-                action=action,
-                reward=reward,
-                done=interaction.done,
+        if not training_data:
+            await update_task_status(
+                task_id,
+                status="completed",
+                end_time=datetime.now().isoformat(),
+                total_interactions=0,
+                processed_interactions=0,
+                total_loss=0.0,
+                message="No training data available",
             )
+            return
 
-            results.append({"q_value": q_value.item(), "loss": loss})
-            total_loss += loss
+        # 진행 상황 업데이트
+        await update_task_status(task_id, total_interactions=len(training_data))
 
-            # 진행 상황 업데이트
-            await update_task_status(task_id, processed_interactions=len(results))
-            await asyncio.sleep(0)  # 다른 작업에 CPU 시간 양보
+        # 배치 처리
+        total_loss = 0.0
+        processed_count = 0
+        results = []
+
+        for i, (user_embedding, content_embedding, action, reward) in enumerate(
+            training_data
+        ):
+            try:
+                # 학습 진행
+                q_value, loss = learner.process_interaction(
+                    user_embedding=user_embedding,
+                    content_embedding=content_embedding,
+                    action=action,
+                    reward=reward,
+                    done=True,
+                )
+
+                total_loss += loss
+                processed_count += 1
+                results.append({"q_value": q_value.item(), "loss": loss})
+
+                # 진행 상황 업데이트 (10개 샘플마다)
+                if (i + 1) % 10 == 0:
+                    await update_task_status(
+                        task_id,
+                        processed_interactions=i + 1,
+                        total_loss=total_loss / (i + 1),
+                    )
+                    # 딜레이 제거
+                    await asyncio.sleep(0)
+
+            except Exception as e:
+                print(f"Error processing sample {i}: {str(e)}")
+                continue
 
         # 평균 손실값 계산
-        avg_loss = total_loss / len(data.interactions) if data.interactions else 0.0
+        avg_loss = total_loss / processed_count if processed_count > 0 else 0.0
 
         # 모델 저장
         save_path = None
@@ -200,117 +279,20 @@ async def process_batch_interaction_task(
             task_id,
             status="completed",
             end_time=datetime.now().isoformat(),
+            processed_interactions=processed_count,
             results=results,
             total_loss=avg_loss,
             save_path=save_path,
+            message="Training completed successfully",
         )
 
     except Exception as e:
         await update_task_status(
-            task_id, status="failed", end_time=datetime.now().isoformat(), error=str(e)
-        )
-
-
-@router.post("/interaction", response_model=InteractionResponse)
-async def process_interaction(
-    data: InteractionData,
-) -> InteractionResponse:
-    """단일 사용자 상호작용을 처리하고 Q-value를 예측합니다.
-
-    Args:
-        data: 사용자 상호작용 데이터
-
-    Returns:
-        예측된 Q-value와 손실값을 포함한 응답
-
-    Raises:
-        HTTPException: 처리 중 오류가 발생한 경우
-    """
-    try:
-        # TODO: 실제 임베딩 생성 로직 구현
-        # 현재는 예시로 랜덤 텐서 사용
-        user_embedding = torch.randn(1, 20)  # [batch_size, user_dim]
-        content_embedding = torch.randn(1, 15)  # [batch_size, content_dim]
-        action = torch.tensor([[1]], dtype=torch.long)  # [[action_index]]
-        reward = torch.tensor([data.reward])
-
-        # 상호작용 처리
-        q_value, loss = learner.process_interaction(
-            user_embedding=user_embedding,
-            content_embedding=content_embedding,
-            action=action,
-            reward=reward,
-            done=data.done,
-        )
-
-        return InteractionResponse(
-            q_value=q_value.item(),
-            loss=loss,
-        )
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error processing interaction: {str(e)}",
-        )
-
-
-@router.post("/batch-interaction", response_model=BatchInteractionResponse)
-async def process_batch_interaction(
-    data: BatchInteractionData,
-) -> BatchInteractionResponse:
-    """여러 사용자 상호작용을 배치로 처리하고 Q-value를 예측합니다.
-
-    Args:
-        data: 배치 상호작용 데이터
-
-    Returns:
-        각 상호작용의 처리 결과와 전체 평균 손실값을 포함한 응답
-
-    Raises:
-        HTTPException: 처리 중 오류가 발생한 경우
-    """
-    try:
-        results = []
-        total_loss = 0.0
-
-        for interaction in data.interactions:
-            # TODO: 실제 임베딩 생성 로직 구현
-            # 현재는 예시로 랜덤 텐서 사용
-            user_embedding = torch.randn(1, 20)  # [batch_size, user_dim]
-            content_embedding = torch.randn(1, 15)  # [batch_size, content_dim]
-            action = torch.tensor([[1]], dtype=torch.long)  # [[action_index]]
-            reward = torch.tensor([interaction.reward])
-
-            # 상호작용 처리
-            q_value, loss = learner.process_interaction(
-                user_embedding=user_embedding,
-                content_embedding=content_embedding,
-                action=action,
-                reward=reward,
-                done=interaction.done,
-            )
-
-            results.append(
-                InteractionResponse(
-                    q_value=q_value.item(),
-                    loss=loss,
-                )
-            )
-            total_loss += loss
-
-        # 평균 손실값 계산
-        avg_loss = total_loss / len(data.interactions) if data.interactions else 0.0
-
-        return BatchInteractionResponse(
-            results=results,
-            total_loss=avg_loss,
-        )
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error processing batch interaction: {str(e)}",
+            task_id,
+            status="failed",
+            end_time=datetime.now().isoformat(),
+            error=str(e),
+            message=f"Training failed: {str(e)}",
         )
 
 
@@ -339,24 +321,23 @@ async def save_model(
         )
 
 
-@router.post("/async-batch-interaction", response_model=AsyncBatchResponse)
-async def process_async_batch_interaction(
-    data: BatchInteractionData,
+@router.post("/async-train", response_model=AsyncBatchResponse)
+async def start_async_training(
     background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    batch_size: int = 100,
     save_model: bool = True,
 ) -> AsyncBatchResponse:
-    """여러 사용자 상호작용을 비동기로 처리하고 Q-value를 예측합니다.
+    """비동기로 모델 학습을 시작합니다.
 
     Args:
-        data: 배치 상호작용 데이터
         background_tasks: FastAPI 백그라운드 작업
+        db: 데이터베이스 세션
+        batch_size: 한 번에 처리할 배치 크기
         save_model: 처리 완료 후 모델 저장 여부
 
     Returns:
         작업 ID와 상태를 포함한 응답
-
-    Raises:
-        HTTPException: 처리 중 오류가 발생한 경우
     """
     try:
         task_id = str(uuid.uuid4())
@@ -365,18 +346,18 @@ async def process_async_batch_interaction(
         background_tasks.add_task(
             process_batch_interaction_task,
             task_id=task_id,
-            data=data,
+            batch_size=batch_size,
             save_model=save_model,
+            db=db,
         )
 
         return AsyncBatchResponse(
-            task_id=task_id, status="processing", message="Batch processing started"
+            task_id=task_id, status="processing", message="Training started"
         )
 
     except Exception as e:
         raise HTTPException(
-            status_code=500,
-            detail=f"Error starting async batch processing: {str(e)}",
+            status_code=500, detail=f"Error starting async training: {str(e)}"
         )
 
 
@@ -418,3 +399,201 @@ async def delete_async_batch_status(task_id: str) -> Dict[str, str]:
         return {"message": f"Task {task_id} deleted successfully"}
     else:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+
+async def collect_training_data(
+    db: Session, batch_size: int = 100
+) -> List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]:
+    """학습을 위한 데이터를 수집합니다.
+
+    Args:
+        db: 데이터베이스 세션
+        batch_size: 한 번에 처리할 배치 크기
+
+    Returns:
+        학습 데이터 리스트 (user_embedding, content_embedding, action, reward)
+    """
+    # Recommendation에서 추천 데이터 수집
+    recommendations = (
+        db.query(Recommendation)
+        .filter(Recommendation.embedding.isnot(None))  # 임베딩이 있는 추천만
+        .order_by(Recommendation.recommended_at.desc())
+        .limit(batch_size)
+        .all()
+    )
+
+    training_data = []
+
+    for recommendation in recommendations:
+        # 사용자 임베딩 가져오기
+        if not recommendation.embedding:
+            continue
+
+        try:
+            user_embedding = torch.tensor(eval(recommendation.embedding))
+
+            # 추천된 모든 컨텐츠에 대해 처리
+            for rec_content in recommendation.contents:
+                content = (
+                    db.query(Content)
+                    .filter(Content.id == rec_content.content_id)
+                    .first()
+                )
+
+                if not content or not content.embedding:
+                    continue
+
+                content_embedding = torch.tensor(eval(content.embedding))
+
+                # 액션 (컨텐츠 ID를 액션으로 사용)
+                action = torch.tensor([[content.id]], dtype=torch.long)
+
+                # 해당 컨텐츠에 대한 사용자 로그 확인
+                user_log = (
+                    db.query(UserLog)
+                    .filter(
+                        and_(
+                            UserLog.recommendation_id == recommendation.id,
+                            UserLog.content_id == content.id,
+                            UserLog.event_type == EventType.CLICK,
+                        )
+                    )
+                    .first()
+                )
+
+                # 보상 계산 (클릭했으면 1.0, 아니면 0.0)
+                reward = 1.0 if user_log else 0.0
+                if user_log and user_log.ratio:
+                    reward *= user_log.ratio
+                reward = torch.tensor([reward])
+
+                training_data.append(
+                    (user_embedding, content_embedding, action, reward)
+                )
+
+        except Exception as e:
+            print(f"Error processing recommendation {recommendation.id}: {str(e)}")
+            continue
+
+    return training_data
+
+
+@router.post("/collect-training-data", response_model=TrainingDataResponse)
+async def collect_data(
+    batch_size: int = 100, db: Session = Depends(get_db)
+) -> TrainingDataResponse:
+    """학습 데이터를 수집합니다.
+
+    Args:
+        batch_size: 한 번에 처리할 배치 크기
+        db: 데이터베이스 세션
+
+    Returns:
+        수집된 데이터 수와 상태 메시지
+    """
+    try:
+        training_data = await collect_training_data(db, batch_size)
+        return TrainingDataResponse(
+            message="Training data collected successfully",
+            data_count=len(training_data),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error collecting training data: {str(e)}"
+        )
+
+
+async def process_training_batch(
+    db: Session,
+    training_data: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]],
+) -> Tuple[int, float]:
+    """배치 데이터를 처리하고 학습합니다.
+
+    Args:
+        db: 데이터베이스 세션
+        training_data: 학습 데이터 리스트
+
+    Returns:
+        처리된 데이터 수와 평균 손실값
+    """
+    total_loss = 0.0
+    processed_count = 0
+
+    print(f"Processing {len(training_data)} training samples...")
+
+    for i, (user_embedding, content_embedding, action, reward) in enumerate(
+        training_data
+    ):
+        try:
+            # 학습 진행
+            q_value, loss = learner.process_interaction(
+                user_embedding=user_embedding,
+                content_embedding=content_embedding,
+                action=action,
+                reward=reward,
+                done=True,  # 각 상호작용은 독립적으로 처리
+            )
+
+            total_loss += loss
+            processed_count += 1
+
+            if (i + 1) % 10 == 0:  # 10개 샘플마다 진행상황 출력
+                print(
+                    f"Processed {i + 1}/{len(training_data)} samples. Current loss: {loss:.4f}"
+                )
+
+        except Exception as e:
+            print(f"Error processing training data at index {i}: {str(e)}")
+            continue
+
+    avg_loss = total_loss / processed_count if processed_count > 0 else 0.0
+    print(
+        f"Training completed. Processed {processed_count} samples. Average loss: {avg_loss:.4f}"
+    )
+    return processed_count, avg_loss
+
+
+@router.post("/train", response_model=TrainingResponse)
+async def train_model(
+    batch_size: int = 100, db: Session = Depends(get_db)
+) -> TrainingResponse:
+    """수집된 데이터로 모델을 학습합니다.
+
+    Args:
+        batch_size: 한 번에 처리할 배치 크기
+        db: 데이터베이스 세션
+
+    Returns:
+        학습 처리 결과
+    """
+    try:
+        print("Starting training process...")
+
+        # 학습 데이터 수집
+        print("Collecting training data...")
+        training_data = await collect_training_data(db, batch_size)
+
+        if not training_data:
+            print("No training data available")
+            return TrainingResponse(
+                message="No training data available", processed_count=0, total_loss=0.0
+            )
+
+        print(f"Collected {len(training_data)} training samples")
+
+        # 배치 처리
+        processed_count, total_loss = await process_training_batch(db, training_data)
+
+        # 모델 저장
+        save_path = learner.save_model()
+        print(f"Model saved at {save_path}")
+
+        return TrainingResponse(
+            message=f"Training completed. Model saved at {save_path}",
+            processed_count=processed_count,
+            total_loss=total_loss,
+        )
+
+    except Exception as e:
+        print(f"Error during training: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error during training: {str(e)}")
