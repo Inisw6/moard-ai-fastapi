@@ -408,29 +408,25 @@ async def collect_training_data(
 
     Args:
         db: 데이터베이스 세션
-        batch_size: 한 번에 처리할 배치 크기
+        batch_size: 수집할 데이터의 최대 개수
 
     Returns:
-        학습 데이터 리스트 (user_embedding, content_embedding, action, reward)
+        학습 데이터 리스트 (user_embedding, content_embedding, action, reward) 튜플의 리스트
     """
-    # Recommendation에서 추천 데이터 수집
+    # Recommendation에서 추천 데이터 수집 (가장 최근 데이터부터)
     recommendations = (
         db.query(Recommendation)
         .filter(Recommendation.embedding.isnot(None))  # 임베딩이 있는 추천만
-        .order_by(Recommendation.recommended_at.desc())
-        .limit(batch_size)
+        .order_by(Recommendation.recommended_at.desc())  # 최신순 정렬
+        .limit(batch_size)  # 배치 사이즈만큼만 가져오기
         .all()
     )
 
     training_data = []
-
     for recommendation in recommendations:
-        # 사용자 임베딩 가져오기
-        if not recommendation.embedding:
-            continue
-
         try:
-            user_embedding = torch.tensor(eval(recommendation.embedding))
+            # 사용자 임베딩
+            user_embedding = torch.tensor(json.loads(recommendation.embedding))
 
             # 추천된 모든 컨텐츠에 대해 처리
             for rec_content in recommendation.contents:
@@ -443,10 +439,11 @@ async def collect_training_data(
                 if not content or not content.embedding:
                     continue
 
-                content_embedding = torch.tensor(eval(content.embedding))
+                # 컨텐츠 임베딩
+                content_embedding = torch.tensor(json.loads(content.embedding))
 
-                # 액션 (컨텐츠 ID를 액션으로 사용)
-                action = torch.tensor([[content.id]], dtype=torch.long)
+                # 액션 (추천된 컨텐츠의 인덱스)
+                action = torch.tensor([[rec_content.content_id]], dtype=torch.long)
 
                 # 해당 컨텐츠에 대한 사용자 로그 확인
                 user_log = (
@@ -463,8 +460,6 @@ async def collect_training_data(
 
                 # 보상 계산 (클릭했으면 1.0, 아니면 0.0)
                 reward = 1.0 if user_log else 0.0
-                if user_log and user_log.ratio:
-                    reward *= user_log.ratio
                 reward = torch.tensor([reward])
 
                 training_data.append(
