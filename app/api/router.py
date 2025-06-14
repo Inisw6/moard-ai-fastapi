@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.endpoints import predict, embedding, online_learning
+from app.api.endpoints import predict, embedding, online_learning, model
 
 api_router = APIRouter()
 api_router.include_router(
@@ -11,3 +11,4 @@ api_router.include_router(
 api_router.include_router(
     online_learning.router, prefix="/online-learning", tags=["Online Learning"]
 )
+api_router.include_router(model.router, prefix="/model", tags=["model"])
