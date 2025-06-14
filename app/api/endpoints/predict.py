@@ -2,13 +2,15 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from app.schemas.predict import InferenceRequest, InferenceResponse
 from app.services.model_service import ModelService, get_model_service
-from app.models.orm import User, Content
+from app.models.orm import User, Content, UserLog
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from pydantic import BaseModel
 from uuid import UUID
 import numpy as np
 import json
+from datetime import datetime, timezone
+import pandas as pd
 
 router = APIRouter()
 
@@ -56,7 +58,87 @@ class TopContentsRequest(BaseModel):
 
 
 class TopContentsResponse(BaseModel):
+    """상위 6개의 콘텐츠 ID를 반환하는 응답 모델입니다.
+
+    Attributes:
+        content_ids (List[int]): 상위 6개의 콘텐츠 ID 리스트입니다.
+        user_embedding (List[float]): 사용자의 임베딩 벡터입니다.
+    """
+
     content_ids: List[int]
+    user_embedding: List[float]
+
+
+def get_user_embedding(user_id: int, db: Session, time_decay_factor: float = 0.9, max_logs: int = 10) -> np.ndarray:
+    """사용자의 최근 활동 로그를 기반으로 임베딩을 생성합니다.
+
+    Args:
+        user_id: 사용자 ID
+        db: 데이터베이스 세션
+        time_decay_factor: 시간 감쇠 계수
+        max_logs: 사용할 최대 로그 수
+
+    Returns:
+        np.ndarray: 사용자 임베딩 벡터
+    """
+    # 사용자의 최근 로그 조회
+    user_logs = (
+        db.query(UserLog)
+        .filter(UserLog.user_id == user_id)
+        .order_by(UserLog.timestamp.desc())
+        .limit(max_logs)
+        .all()
+    )
+
+    if not user_logs:
+        return np.zeros(300, dtype=np.float32)
+
+    # 현재 시간 (UTC 기준)
+    current_time = datetime.now(timezone.utc)
+    
+    weighted_embeddings = []
+    for log in user_logs:
+        # 콘텐츠 임베딩 가져오기
+        content = db.query(Content).filter(Content.id == log.content_id).first()
+        if not content or not content.embedding:
+            continue
+
+        try:
+            # JSON 문자열을 파싱하여 float 리스트로 변환
+            embedding = json.loads(content.embedding)
+            if not isinstance(embedding, list) or not all(
+                isinstance(x, (int, float)) for x in embedding
+            ):
+                continue
+
+            # timestamp가 timezone 정보가 없는 경우 UTC로 가정
+            log_time = log.timestamp
+            if log_time.tzinfo is None:
+                log_time = log_time.replace(tzinfo=timezone.utc)
+
+            # 시간 가중치 계산
+            hours_diff = (current_time - log_time).total_seconds() / 3600
+            weight = time_decay_factor ** hours_diff
+
+            weighted_embeddings.append(np.array(embedding) * weight)
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    if not weighted_embeddings:
+        return np.zeros(300, dtype=np.float32)
+
+    # 가중 평균 계산
+    weighted_embedding = np.mean(weighted_embeddings, axis=0)
+    
+    # 길이 맞춰 패딩 또는 자르기
+    if len(weighted_embedding) < 300:
+        weighted_embedding = np.pad(
+            weighted_embedding, (0, 300 - len(weighted_embedding)), "constant"
+        )
+    elif len(weighted_embedding) > 300:
+        weighted_embedding = weighted_embedding[:300]
+
+    return weighted_embedding.astype(np.float32)
 
 
 @router.post("/top-contents", response_model=TopContentsResponse)
@@ -65,7 +147,7 @@ async def get_top_contents(
     model_service: ModelService = Depends(get_model_service),
     db: Session = Depends(get_db),
 ):
-    """사용자 ID와 콘텐츠 ID 리스트를 받아 상위 6개의 콘텐츠 ID를 반환합니다.
+    """사용자 ID와 콘텐츠 ID 리스트를 받아 상위 6개의 콘텐츠 ID와 사용자 임베딩을 반환합니다.
 
     Args:
         request (TopContentsRequest): 사용자 ID와 콘텐츠 ID 리스트를 포함하는 요청 본문입니다.
@@ -73,7 +155,7 @@ async def get_top_contents(
         db (Session): 데이터베이스 세션입니다.
 
     Returns:
-        TopContentsResponse: 상위 6개의 콘텐츠 ID를 포함하는 응답 객체입니다.
+        TopContentsResponse: 상위 6개의 콘텐츠 ID와 사용자 임베딩을 포함하는 응답 객체입니다.
 
     Raises:
         HTTPException: 사용자나 콘텐츠를 찾을 수 없거나, 추론 중 오류가 발생한 경우.
@@ -105,11 +187,8 @@ async def get_top_contents(
                 # 임베딩 파싱 실패 시 임시 벡터 사용
                 content_embeddings.append(np.random.rand(300).tolist())
 
-        # TODO: 실제 사용자 임베딩 생성 로직
-        # user_embedding = [0.0] * len(content_embeddings[0]) if content_embeddings else []
-
-        # 임시: 300차원 사용자 임베딩 생성 (랜덤 벡터)
-        user_embedding = np.random.rand(300).tolist()
+        # 사용자 임베딩 생성
+        user_embedding = get_user_embedding(user.id, db).tolist()
 
         # Q-value 예측
         q_values = model_service.predict(
@@ -120,11 +199,14 @@ async def get_top_contents(
         # Q-value와 콘텐츠를 함께 정렬
         content_q_pairs = list(zip(contents, q_values))
         sorted_pairs = sorted(content_q_pairs, key=lambda x: x[1], reverse=True)
-
+        
         # 상위 6개 선택
         top_pairs = sorted_pairs[:6]
-
-        return TopContentsResponse(content_ids=[content.id for content, _ in top_pairs])
+        
+        return TopContentsResponse(
+            content_ids=[content.id for content, _ in top_pairs],
+            user_embedding=user_embedding
+        )
 
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
