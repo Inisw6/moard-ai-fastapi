@@ -110,6 +110,7 @@ class TaskStatus(BaseModel):
         total_loss: 전체 손실값
         error: 오류 메시지
         save_path: 저장된 모델 경로
+        message: 상태 메시지
     """
 
     task_id: str
@@ -122,6 +123,11 @@ class TaskStatus(BaseModel):
     total_loss: Optional[float] = None
     error: Optional[str] = None
     save_path: Optional[str] = None
+    message: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+        json_encoders = {datetime: lambda v: v.isoformat()}
 
 
 class AsyncBatchResponse(BaseModel):
@@ -166,21 +172,29 @@ class TrainingResponse(BaseModel):
 
 async def update_task_status(task_id: str, **kwargs):
     """Redis에 작업 상태를 업데이트합니다."""
-    current_status = redis_client.get(f"task:{task_id}")
-    if current_status:
-        status_dict = json.loads(current_status)
-        status_dict.update(kwargs)
-        redis_client.set(f"task:{task_id}", json.dumps(status_dict))
-    else:
-        status_dict = {
-            "task_id": task_id,
-            "status": "processing",
-            "start_time": datetime.now().isoformat(),
-            "total_interactions": 0,
-            "processed_interactions": 0,
-            **kwargs,
-        }
-        redis_client.set(f"task:{task_id}", json.dumps(status_dict))
+    try:
+        key = f"task:{task_id}"
+        current_status = redis_client.get(key)
+
+        if current_status:
+            status_dict = json.loads(current_status)
+            status_dict.update(kwargs)
+            new_status = json.dumps(status_dict)
+            redis_client.set(key, new_status)
+        else:
+            status_dict = {
+                "task_id": task_id,
+                "status": "processing",
+                "start_time": datetime.now().isoformat(),
+                "total_interactions": 0,
+                "processed_interactions": 0,
+                **kwargs,
+            }
+            new_status = json.dumps(status_dict)
+            redis_client.set(key, new_status)
+
+    except Exception as e:
+        raise e
 
 
 async def get_task_status(task_id: str) -> Optional[TaskStatus]:
@@ -198,15 +212,20 @@ async def get_task_status(task_id: str) -> Optional[TaskStatus]:
 async def get_all_tasks() -> List[TaskStatus]:
     """Redis에서 모든 작업 상태를 조회합니다."""
     tasks = []
-    for key in redis_client.keys("task:*"):
-        try:
-            status_data = redis_client.get(key)
-            if status_data:
-                task = TaskStatus(**json.loads(status_data))
-                tasks.append(task)
-        except Exception as e:
-            print(f"Error parsing task status for {key}: {e}")
-            continue
+    try:
+        # Redis에 저장된 모든 task 키 조회
+        keys = redis_client.keys("task:*")
+
+        for key in keys:
+            try:
+                status_data = redis_client.get(key)
+                if status_data:
+                    task = TaskStatus(**json.loads(status_data))
+                    tasks.append(task)
+            except Exception as e:
+                continue
+    except Exception as e:
+        raise e
     return tasks
 
 
@@ -221,135 +240,7 @@ async def list_all_tasks() -> List[TaskStatus]:
         tasks = await get_all_tasks()
         return tasks
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error retrieving tasks: {str(e)}"
-        )
-
-
-async def process_batch_interaction_task(
-    task_id: str,
-    batch_size: int = 100,
-    save_model: bool = True,
-    db: Session = Depends(get_db),
-):
-    """비동기로 배치 상호작용을 처리하는 작업 함수."""
-    try:
-        # 초기 상태 설정
-        await update_task_status(
-            task_id,
-            status="processing",
-            start_time=datetime.now().isoformat(),
-            total_interactions=0,
-            processed_interactions=0,
-        )
-
-        # 학습 데이터 수집
-        training_data = await collect_training_data(db, batch_size)
-
-        if not training_data:
-            await update_task_status(
-                task_id,
-                status="completed",
-                end_time=datetime.now().isoformat(),
-                total_interactions=0,
-                processed_interactions=0,
-                total_loss=0.0,
-                message="No training data available",
-            )
-            return
-
-        # 진행 상황 업데이트
-        await update_task_status(task_id, total_interactions=len(training_data))
-
-        # 배치 처리
-        total_loss = 0.0
-        processed_count = 0
-        results = []
-
-        for i, (user_embedding, content_embedding, action, reward) in enumerate(
-            training_data
-        ):
-            try:
-                # 학습 진행
-                q_value, loss = learner.process_interaction(
-                    user_embedding=user_embedding,
-                    content_embedding=content_embedding,
-                    action=action,
-                    reward=reward,
-                    done=True,
-                )
-
-                total_loss += loss
-                processed_count += 1
-                results.append({"q_value": q_value.item(), "loss": loss})
-
-                # 진행 상황 업데이트 (10개 샘플마다)
-                if (i + 1) % 10 == 0:
-                    await update_task_status(
-                        task_id,
-                        processed_interactions=i + 1,
-                        total_loss=total_loss / (i + 1),
-                    )
-                    # 딜레이 제거
-                    await asyncio.sleep(0)
-
-            except Exception as e:
-                print(f"Error processing sample {i}: {str(e)}")
-                continue
-
-        # 평균 손실값 계산
-        avg_loss = total_loss / processed_count if processed_count > 0 else 0.0
-
-        # 모델 저장
-        save_path = None
-        if save_model:
-            save_path = learner.save_model()
-
-        # 작업 완료 상태 업데이트
-        await update_task_status(
-            task_id,
-            status="completed",
-            end_time=datetime.now().isoformat(),
-            processed_interactions=processed_count,
-            results=results,
-            total_loss=avg_loss,
-            save_path=save_path,
-            message="Training completed successfully",
-        )
-
-    except Exception as e:
-        await update_task_status(
-            task_id,
-            status="failed",
-            end_time=datetime.now().isoformat(),
-            error=str(e),
-            message=f"Training failed: {str(e)}",
-        )
-
-
-@router.post("/save")
-async def save_model(
-    filename: Optional[str] = None,
-) -> Dict[str, str]:
-    """현재 모델 상태를 저장합니다.
-
-    Args:
-        filename: 저장할 파일명 (None이면 자동 생성)
-
-    Returns:
-        저장된 모델 파일의 경로를 포함한 응답
-
-    Raises:
-        HTTPException: 저장 중 오류가 발생한 경우
-    """
-    try:
-        save_path = learner.save_model(filename=filename)
-        return {"message": "Model saved successfully", "path": save_path}
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error saving model: {str(e)}",
-        )
+        raise HTTPException(status_code=500, detail=f"Error retrieving tasks: {str(e)}")
 
 
 @router.post("/async-train", response_model=AsyncBatchResponse)
@@ -373,13 +264,19 @@ async def start_async_training(
     try:
         task_id = str(uuid.uuid4())
 
+        # 새로운 이벤트 루프 생성
+        loop = asyncio.get_event_loop()
+
         # 백그라운드 작업 시작
         background_tasks.add_task(
-            process_batch_interaction_task,
-            task_id=task_id,
-            batch_size=batch_size,
-            save_model=save_model,
-            db=db,
+            lambda: loop.create_task(
+                process_batch_interaction_task(
+                    task_id=task_id,
+                    batch_size=batch_size,
+                    save_model=save_model,
+                    db=db,
+                )
+            )
         )
 
         return AsyncBatchResponse(
@@ -623,3 +520,103 @@ async def train_model(
     except Exception as e:
         print(f"Error during training: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error during training: {str(e)}")
+
+
+async def process_batch_interaction_task(
+    task_id: str,
+    batch_size: int = 100,
+    save_model: bool = True,
+    db: Session = Depends(get_db),
+):
+    """비동기로 배치 상호작용을 처리하는 작업 함수."""
+    try:
+        # 초기 상태 설정
+        await update_task_status(
+            task_id,
+            status="processing",
+            start_time=datetime.now().isoformat(),
+            total_interactions=0,
+            processed_interactions=0,
+        )
+
+        # 학습 데이터 수집
+        training_data = await collect_training_data(db, batch_size)
+
+        if not training_data:
+            await update_task_status(
+                task_id,
+                status="completed",
+                end_time=datetime.now().isoformat(),
+                total_interactions=0,
+                processed_interactions=0,
+                total_loss=0.0,
+                message="No training data available",
+            )
+            return
+
+        # 진행 상황 업데이트
+        await update_task_status(task_id, total_interactions=len(training_data))
+
+        # 배치 처리
+        total_loss = 0.0
+        processed_count = 0
+        results = []
+
+        for i, (user_embedding, content_embedding, action, reward) in enumerate(
+            training_data
+        ):
+            try:
+                # 학습 진행
+                q_value, loss = learner.process_interaction(
+                    user_embedding=user_embedding,
+                    content_embedding=content_embedding,
+                    action=action,
+                    reward=reward,
+                    done=True,
+                )
+
+                total_loss += loss
+                processed_count += 1
+                results.append({"q_value": q_value.item(), "loss": loss})
+
+                # 진행 상황 업데이트 (10개 샘플마다)
+                if (i + 1) % 10 == 0:
+                    await update_task_status(
+                        task_id,
+                        processed_interactions=i + 1,
+                        total_loss=total_loss / (i + 1),
+                    )
+
+            except Exception as e:
+                print(f"Error processing sample {i}: {str(e)}")
+                continue
+
+        # 평균 손실값 계산
+        avg_loss = total_loss / processed_count if processed_count > 0 else 0.0
+
+        # 모델 저장
+        save_path = None
+        if save_model:
+            save_path = learner.save_model()
+
+        # 작업 완료 상태 업데이트
+        await update_task_status(
+            task_id,
+            status="completed",
+            end_time=datetime.now().isoformat(),
+            processed_interactions=processed_count,
+            results=results,
+            total_loss=avg_loss,
+            save_path=save_path,
+            message="Training completed successfully",
+        )
+
+    except Exception as e:
+        print(f"Task {task_id}: Failed with error: {str(e)}")
+        await update_task_status(
+            task_id,
+            status="failed",
+            end_time=datetime.now().isoformat(),
+            error=str(e),
+            message=f"Training failed: {str(e)}",
+        )
