@@ -1,9 +1,10 @@
-# uvicorn main:app --reload
+# uvicorn app.main:app --reload
 from fastapi import FastAPI
 from app.api.router import api_router
 from app.services.model_service import get_model_service
 from app.services.embedding_service import get_embedding_service
 from contextlib import asynccontextmanager
+
 
 app = FastAPI(
     title="Q-Network Inference API",

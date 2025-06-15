@@ -56,7 +56,8 @@ class Doc2VecContentEmbedder:
             logging.warning(
                 "설정된 content_dim(%d)이 Doc2Vec vector_size(%d)와 다릅니다. "
                 "Doc2Vec의 벡터 크기를 따릅니다.",
-                content_dim, self.pretrained_dim
+                content_dim,
+                self.pretrained_dim,
             )
 
         self.all_contents_df = (
@@ -119,4 +120,4 @@ class Doc2VecContentEmbedder:
             delayed(self.embed_content)(content) for content in contents
         )
 
-        return np.array(embeddings, dtype=np.float32) 
+        return np.array(embeddings, dtype=np.float32)

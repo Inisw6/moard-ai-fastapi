@@ -9,6 +9,7 @@ from app.services.embedding_service import EmbeddingService, get_embedding_servi
 
 router = APIRouter()
 
+
 @router.post("/doc2vec", response_model=EmbeddingResponse)
 async def create_embedding(
     request: EmbeddingRequest,
@@ -38,6 +39,7 @@ async def create_embedding(
             status_code=500, detail=f"임베딩 생성 중 오류 발생: {str(e)}"
         )
 
+
 @router.post("/doc2vec/bulk", response_model=EmbeddingBulkResponse)
 async def create_embeddings_bulk(
     request: EmbeddingBulkRequest,
@@ -65,4 +67,4 @@ async def create_embeddings_bulk(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"벌크 임베딩 생성 중 오류 발생: {str(e)}"
-        ) 
+        )

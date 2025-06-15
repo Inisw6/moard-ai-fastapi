@@ -17,4 +17,4 @@ def get_contents() -> pd.DataFrame:
     # 예: return pd.read_sql("SELECT * FROM contents", db_connection)
     columns = ["id", "type", "title", "description"]
     data: List[Dict[str, Any]] = []
-    return pd.DataFrame(data, columns=columns) 
+    return pd.DataFrame(data, columns=columns)

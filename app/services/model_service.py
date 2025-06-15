@@ -1,6 +1,7 @@
 import torch
-from app.ml.q_network import QNetwork
+from app.ml.q_network import DuelingQNetwork
 from app.core import config
+
 
 class ModelService:
     """모델 로딩 및 추론을 관리하는 싱글턴 서비스 클래스."""
@@ -16,7 +17,7 @@ class ModelService:
 
     def _load_model(self):
         """설정 파일에 지정된 경로에서 모델을 로드하여 인스턴스 변수에 저장합니다."""
-        model = QNetwork(
+        model = DuelingQNetwork(
             user_dim=config.USER_DIM,
             content_dim=config.CONTENT_DIM,
             hidden_dim=config.HIDDEN_DIM,
@@ -35,7 +36,9 @@ class ModelService:
             print(f"모델 로딩 중 오류 발생: {e}")
             self.model = None
 
-    def predict(self, user_embedding: list[float], content_embeddings: list[list[float]]) -> list[float]:
+    def predict(
+        self, user_embedding: list[float], content_embeddings: list[list[float]]
+    ) -> list[float]:
         """주어진 임베딩으로 Q-value를 예측합니다.
 
         Args:
@@ -78,4 +81,4 @@ def get_model_service() -> ModelService:
     Returns:
         ModelService: 모델 서비스의 싱글턴 인스턴스.
     """
-    return ModelService() 
+    return ModelService()
