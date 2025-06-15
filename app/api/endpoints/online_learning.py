@@ -195,6 +195,37 @@ async def get_task_status(task_id: str) -> Optional[TaskStatus]:
     return None
 
 
+async def get_all_tasks() -> List[TaskStatus]:
+    """Redis에서 모든 작업 상태를 조회합니다."""
+    tasks = []
+    for key in redis_client.keys("task:*"):
+        try:
+            status_data = redis_client.get(key)
+            if status_data:
+                task = TaskStatus(**json.loads(status_data))
+                tasks.append(task)
+        except Exception as e:
+            print(f"Error parsing task status for {key}: {e}")
+            continue
+    return tasks
+
+
+@router.get("/tasks", response_model=List[TaskStatus])
+async def list_all_tasks() -> List[TaskStatus]:
+    """모든 작업의 상태를 조회합니다.
+
+    Returns:
+        작업 상태 목록
+    """
+    try:
+        tasks = await get_all_tasks()
+        return tasks
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error retrieving tasks: {str(e)}"
+        )
+
+
 async def process_batch_interaction_task(
     task_id: str,
     batch_size: int = 100,
