@@ -5,6 +5,8 @@ from app.core.database import get_db
 from app.services.model_service import ModelService
 from app.core import config
 from app.schemas.online_learning import ModelListResponse, ModelChangeResponse
+from typing import Dict, List
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -74,3 +76,56 @@ async def change_model(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"모델 변경 중 오류 발생: {str(e)}")
+
+
+@router.delete("/{model_path:path}")
+async def delete_model(
+    model_path: str,
+) -> Dict[str, str]:
+    """저장된 모델을 삭제합니다.
+
+    Args:
+        model_path: 삭제할 모델 파일의 경로 (models/ 디렉토리 내의 상대 경로)
+
+    Returns:
+        삭제 결과 메시지
+
+    Raises:
+        HTTPException: 모델 파일이 존재하지 않거나 삭제 중 오류가 발생한 경우
+    """
+    try:
+        # models 디렉토리 내의 파일만 삭제 가능하도록 경로 검증
+        if not model_path.startswith("models/"):
+            model_path = f"models/{model_path}"
+
+        # 프로젝트 루트 디렉토리 기준으로 경로 생성
+        full_path = os.path.abspath(
+            os.path.join(
+                os.path.dirname(
+                    os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                ),
+                model_path,
+            )
+        )
+
+        if not os.path.exists(full_path):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model file not found: {model_path}",
+            )
+
+        # 모델 파일 삭제
+        os.remove(full_path)
+
+        return {
+            "message": f"Model deleted successfully: {model_path}",
+            "deleted_path": model_path,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error deleting model: {str(e)}",
+        )
