@@ -2,7 +2,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 # MySQL 연결 URL
-DATABASE_URL = "mysql+pymysql://moard:moard1234@localhost:3306/moard?charset=utf8mb4"
+DATABASE_URL = "mysql+pymysql://moard:moard1234@mysql:3306/moard?charset=utf8mb4"
 
 # Engine, Session, Base 선언
 engine = create_engine(DATABASE_URL, echo=True)

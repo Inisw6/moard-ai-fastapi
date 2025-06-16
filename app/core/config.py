@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     PRETRAINED_MODEL_PATH: str = "models/dqn_model_final.pth"
 
     # Redis 설정
-    REDIS_HOST: str = "localhost"  # Docker 환경에서는 "redis"로 변경
+    REDIS_HOST: str = "redis"  # Docker 환경에서는 "redis"로 변경
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
     REDIS_PASSWORD: str = ""
