@@ -19,8 +19,7 @@ class DuelingQNetwork(nn.Module):
     """
 
     def __init__(self, user_dim: int, content_dim: int, hidden_dim: int = 128) -> None:
-        """
-        DuelingQNetwork 클래스 생성자.
+        """DuelingQNetwork 클래스 생성자.
 
         Args:
             user_dim (int): 사용자 임베딩 벡터 차원.
@@ -53,8 +52,7 @@ class DuelingQNetwork(nn.Module):
         )
 
     def forward(self, user: torch.Tensor, content: torch.Tensor) -> torch.Tensor:
-        """
-        사용자/콘텐츠 벡터를 받아 Dueling 구조로 Q-value를 예측합니다.
+        """사용자/콘텐츠 벡터를 받아 Dueling 구조로 Q-value를 예측합니다.
 
         Args:
             user (torch.Tensor): [batch_size, user_dim]

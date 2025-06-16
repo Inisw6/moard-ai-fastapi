@@ -12,9 +12,6 @@ def get_contents() -> pd.DataFrame:
         pd.DataFrame: 'id', 'type', 'title', 'description' 컬럼을 가진
             콘텐츠 정보 DataFrame.
     """
-    # 실제 프로덕션 환경에서는 이 부분에서 데이터베이스에 연결하여
-    # 데이터를 조회하는 로직이 필요합니다.
-    # 예: return pd.read_sql("SELECT * FROM contents", db_connection)
     columns = ["id", "type", "title", "description"]
     data: List[Dict[str, Any]] = []
     return pd.DataFrame(data, columns=columns)

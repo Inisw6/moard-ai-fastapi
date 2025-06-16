@@ -1,19 +1,21 @@
+import os
+from typing import Dict
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-import os
-from app.core.database import get_db
-from app.services.model_service import ModelService
+
 from app.core import config
+from app.core.database import get_db
 from app.schemas.online_learning import ModelListResponse, ModelChangeResponse
-from typing import Dict, List
-from app.core.config import settings
+from app.services.model_service import ModelService
 
 router = APIRouter()
 
 
 @router.get("/list", response_model=ModelListResponse)
 async def list_models() -> ModelListResponse:
-    """사용 가능한 모델 목록을 조회합니다.
+    """
+    사용 가능한 모델 목록을 조회합니다.
 
     Returns:
         ModelListResponse: 모델 목록과 현재 사용 중인 모델 정보
@@ -43,7 +45,8 @@ async def list_models() -> ModelListResponse:
 async def change_model(
     model_name: str, db: Session = Depends(get_db)
 ) -> ModelChangeResponse:
-    """현재 사용 중인 모델을 변경합니다.
+    """
+    현재 사용 중인 모델을 변경합니다.
 
     Args:
         model_name: 변경할 모델 파일명
@@ -82,7 +85,8 @@ async def change_model(
 async def delete_model(
     model_path: str,
 ) -> Dict[str, str]:
-    """저장된 모델을 삭제합니다.
+    """
+    저장된 모델을 삭제합니다.
 
     Args:
         model_path: 삭제할 모델 파일의 경로 (models/ 디렉토리 내의 상대 경로)

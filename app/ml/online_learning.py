@@ -1,14 +1,13 @@
-"""온라인 학습을 위한 모듈.
-
-이 모듈은 Q-Network의 온라인 학습을 위한 클래스와 함수들을 제공합니다.
-"""
-
-from typing import Optional, Tuple
-import torch
-from torch import Tensor
-from app.ml.q_network import DuelingQNetwork
 import os
 from datetime import datetime
+from typing import Optional, Tuple
+
+import torch
+from torch import Tensor
+import torch.nn.functional as F
+
+# 로컬 모듈
+from app.ml.q_network import DuelingQNetwork
 
 
 class OnlineLearner:
@@ -41,8 +40,12 @@ class OnlineLearner:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # 네트워크 초기화
-        self.policy_net = DuelingQNetwork(user_dim, content_dim, hidden_dim).to(self.device)
-        self.target_net = DuelingQNetwork(user_dim, content_dim, hidden_dim).to(self.device)
+        self.policy_net = DuelingQNetwork(user_dim, content_dim, hidden_dim).to(
+            self.device
+        )
+        self.target_net = DuelingQNetwork(user_dim, content_dim, hidden_dim).to(
+            self.device
+        )
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
@@ -105,7 +108,7 @@ class OnlineLearner:
 
         # 손실 계산 및 역전파
         loss = torch.nn.functional.smooth_l1_loss(current_q_value, target_q_value)
-        
+
         # 옵티마이저로 학습
         self.optimizer.zero_grad()
         loss.backward()

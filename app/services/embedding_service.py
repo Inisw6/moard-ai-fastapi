@@ -1,64 +1,71 @@
 import logging
-from typing import List, Dict
+from typing import Any, Dict, List
+
 from app.ml.doc2vec_embedder import Doc2VecContentEmbedder
 
 
 class EmbeddingService:
-    """Doc2Vec 임베더 모델을 관리하는 싱글턴 서비스 클래스."""
+    """
+    싱글턴 패턴으로 Doc2VecContentEmbedder를 관리하는 서비스 클래스.
 
-    _instance = None
-    _embedder = None
+    Attributes:
+        _instance (Optional[EmbeddingService]): 싱글턴 인스턴스 캐시
+        _embedder (Optional[Doc2VecContentEmbedder]): Doc2Vec 임베더 인스턴스
+    """
 
-    def __new__(cls):
-        """싱글턴 인스턴스를 생성하고 반환합니다."""
+    _instance: "EmbeddingService" = None  # type: ignore[name-defined]
+    _embedder: Doc2VecContentEmbedder = None  # type: ignore[assignment]
+
+    def __new__(cls) -> "EmbeddingService":
         if cls._instance is None:
-            cls._instance = super(EmbeddingService, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
             try:
-                # 애플리케이션 시작 시 임베더를 한 번만 로드합니다.
                 cls._embedder = Doc2VecContentEmbedder()
-            except Exception as e:
-                logging.error(f"Doc2Vec 임베더 초기화 실패: {e}")
-                cls._embedder = None
+            except Exception as err:
+                logging.error("Doc2Vec 임베더 초기화 실패: %s", err)
+                cls._embedder = None  # type: ignore[assignment]
         return cls._instance
 
     def get_embedder(self) -> Doc2VecContentEmbedder:
-        """로드된 Doc2Vec 임베더 인스턴스를 반환합니다.
+        """
+        로드된 Doc2VecContentEmbedder 인스턴스를 반환합니다.
 
         Returns:
-            Doc2VecContentEmbedder: Doc2Vec 임베더 인스턴스.
+            Doc2VecContentEmbedder: 임베더 인스턴스
 
         Raises:
-            RuntimeError: 임베더 로딩에 실패했을 경우 발생합니다.
+            RuntimeError: 임베더 로딩에 실패했을 경우
         """
         if self._embedder is None:
             raise RuntimeError("Doc2Vec 임베더가 성공적으로 로드되지 않았습니다.")
         return self._embedder
 
-    def embed_bulk(self, contents: List[Dict]) -> List[List[float]]:
-        """여러 콘텐츠를 한번에 임베딩합니다.
+    def embed_bulk(self, contents: List[Dict[str, Any]]) -> List[List[float]]:
+        """
+        여러 콘텐츠를 임베딩하여 결과 벡터 리스트를 반환합니다.
 
         Args:
-            contents (ListDict]): 임베딩할 콘텐츠 딕셔너리 리스트.
+            contents (List[Dict[str, Any]]): 임베딩할 콘텐츠 리스트
 
         Returns:
-            List[List[float]]: 생성된 임베딩 벡터들의 리스트.
+            List[List[float]]: 생성된 임베딩 벡터 리스트
 
         Raises:
-            RuntimeError: 임베더가 로드되지 않았거나 추론 중 오류가 발생한 경우.
+            RuntimeError: 임베딩 중 오류가 발생한 경우
         """
         embedder = self.get_embedder()
         try:
-            embeddings_array = embedder.embed_contents(contents)
-            return embeddings_array.tolist()
-        except Exception as e:
-            logging.error(f"벌크 임베딩 중 오류 발생: {e}")
-            raise RuntimeError("벌크 임베딩 과정에서 오류가 발생했습니다.")
+            return embedder.embed_contents(contents).tolist()
+        except Exception as err:
+            logging.error("벌크 임베딩 중 오류 발생: %s", err)
+            raise RuntimeError("벌크 임베딩 과정에서 오류가 발생했습니다.") from err
 
 
 def get_embedding_service() -> EmbeddingService:
-    """EmbeddingService의 싱글턴 인스턴스를 반환하는 의존성 주입용 함수.
+    """
+    FastAPI 의존성 주입용 함수로 EmbeddingService 싱글턴을 반환합니다.
 
     Returns:
-        EmbeddingService: 임베딩 서비스의 싱글턴 인스턴스.
+        EmbeddingService: 임베딩 서비스 인스턴스
     """
     return EmbeddingService()

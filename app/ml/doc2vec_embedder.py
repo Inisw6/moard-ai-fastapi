@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import Optional, List, Dict
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -115,7 +115,6 @@ class Doc2VecContentEmbedder:
             return np.array([], dtype=np.float32).reshape(0, self.content_dim)
 
         # joblib을 사용하여 embed_content 함수를 병렬로 실행합니다.
-        # n_jobs=-1은 사용 가능한 모든 CPU 코어를 사용하라는 의미입니다.
         embeddings = Parallel(n_jobs=-1)(
             delayed(self.embed_content)(content) for content in contents
         )

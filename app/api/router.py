@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from app.api.endpoints import predict, embedding, online_learning, model
 
 api_router = APIRouter()
+
 api_router.include_router(
     predict.router, prefix="/predict", tags=["Q-Value Prediction"]
 )

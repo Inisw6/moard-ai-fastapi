@@ -1,18 +1,30 @@
+from typing import Generator
+
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 # MySQL 연결 URL
-DATABASE_URL = "mysql+pymysql://moard:moard1234@mysql:3306/moard?charset=utf8mb4"
+DATABASE_URL: str = "mysql+pymysql://moard:moard1234@mysql:3306/moard?charset=utf8mb4"
 
-# Engine, Session, Base 선언
-engine = create_engine(DATABASE_URL, echo=True)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# SQLAlchemy 엔진 및 세션 구성
+engine: Engine = create_engine(DATABASE_URL, echo=True)
+SessionLocal: sessionmaker = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+)
 Base = declarative_base()
 
 
-# FastAPI 의존성으로 사용할 DB 세션 획득 함수
-def get_db():
-    db = SessionLocal()
+def get_db() -> Generator[Session, None, None]:
+    """
+    FastAPI 의존성으로 사용할 DB 세션을 생성하고, 요청 종료 시 세션을 종료합니다.
+
+    Yields:
+        Session: 데이터베이스 세션 인스턴스
+    """
+    db: Session = SessionLocal()
     try:
         yield db
     finally:
