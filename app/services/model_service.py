@@ -1,6 +1,7 @@
 import torch
 from app.ml.q_network import DuelingQNetwork
 from app.core import config
+import os
 
 
 class ModelService:
@@ -35,6 +36,16 @@ class ModelService:
         except Exception as e:
             print(f"모델 로딩 중 오류 발생: {e}")
             self.model = None
+
+    def get_model_name(self) -> str:
+        """현재 로드된 모델의 이름을 반환합니다.
+
+        Returns:
+            str: 모델 파일의 이름입니다.
+        """
+        if self.model is None:
+            return "No model loaded"
+        return os.path.basename(config.MODEL_PATH)
 
     def predict(
         self, user_embedding: list[float], content_embeddings: list[list[float]]

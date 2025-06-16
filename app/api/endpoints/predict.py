@@ -63,10 +63,12 @@ class TopContentsResponse(BaseModel):
     Attributes:
         content_ids (List[int]): 상위 6개의 콘텐츠 ID 리스트입니다.
         user_embedding (List[float]): 사용자의 임베딩 벡터입니다.
+        model_name (str): 사용된 모델의 이름입니다.
     """
 
     content_ids: List[int]
     user_embedding: List[float]
+    model_name: str
 
 
 def get_user_embedding(user_id: int, db: Session, time_decay_factor: float = 0.9, max_logs: int = 10) -> np.ndarray:
@@ -155,7 +157,7 @@ async def get_top_contents(
         db (Session): 데이터베이스 세션입니다.
 
     Returns:
-        TopContentsResponse: 상위 6개의 콘텐츠 ID와 사용자 임베딩을 포함하는 응답 객체입니다.
+        TopContentsResponse: 상위 6개의 콘텐츠 ID, 사용자 임베딩, 그리고 사용된 모델명을 포함하는 응답 객체입니다.
 
     Raises:
         HTTPException: 사용자나 콘텐츠를 찾을 수 없거나, 추론 중 오류가 발생한 경우.
@@ -205,7 +207,8 @@ async def get_top_contents(
         
         return TopContentsResponse(
             content_ids=[content.id for content, _ in top_pairs],
-            user_embedding=user_embedding
+            user_embedding=user_embedding,
+            model_name=model_service.get_model_name()
         )
 
     except RuntimeError as e:
