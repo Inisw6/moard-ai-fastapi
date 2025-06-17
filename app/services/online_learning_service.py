@@ -33,9 +33,9 @@ def initialize_learner() -> OnlineLearner:
     """
     pretrained_path: str = settings.PRETRAINED_MODEL_PATH
     if os.path.exists(pretrained_path):
-        print(f"Loading existing model from {pretrained_path}")
+        logging.info(f"Loading existing model from {pretrained_path}")
         return OnlineLearner(model_path=pretrained_path)
-    print("No existing model found. Creating new model.")
+    logging.warning("No existing model found. Creating new model.")
     return OnlineLearner(model_path=pretrained_path)
 
 

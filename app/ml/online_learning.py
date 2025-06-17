@@ -1,4 +1,5 @@
 import os
+import logging
 from datetime import datetime
 from typing import Optional, Tuple
 
@@ -6,7 +7,6 @@ import torch
 from torch import Tensor
 import torch.nn.functional as F
 
-# 로컬 모듈
 from app.ml.q_network import DuelingQNetwork
 
 
@@ -68,9 +68,11 @@ class OnlineLearner:
             self.target_net.load_state_dict(checkpoint["target_net_state"])
             self.policy_net.train()
             self.target_net.eval()
-            print(f"Successfully loaded pre-trained model from {model_path}")
+            logging.info(f"Successfully loaded pre-trained model from {model_path}")
         except Exception as e:
-            print(f"Error loading pre-trained model: {e}. Starting from scratch.")
+            logging.warning(
+                f"Error loading pre-trained model: {e}. Starting from scratch."
+            )
 
     def process_interaction(
         self,
@@ -152,6 +154,6 @@ class OnlineLearner:
         }
 
         torch.save(checkpoint, save_path)
-        print(f"Model saved to {save_path}")
+        logging.info(f"Model saved to {save_path}")
 
         return save_path
